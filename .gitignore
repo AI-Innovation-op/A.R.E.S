@@ -1,0 +1,17 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+coverage/
+test-results/
+playwright-report/
+.env.*.tmp
+.local-setup/
+.release-check/
+*.log
+*.dump
+*.pem
+*.key
+.DS_Store
+Thumbs.db

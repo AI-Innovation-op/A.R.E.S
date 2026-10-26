@@ -1,0 +1,5 @@
+import assert from 'node:assert/strict';import { test } from 'node:test';
+import { dependencyIdentity } from '../src/modules/workspace/infrastructure/docker-runner.js';
+test('el ejecutor rechaza dependencias Git, privadas, locales y sin integridad antes de preparar caché',()=>{
+ const manifest=JSON.stringify({dependencies:{example:'^1.0.0'}}),lock=JSON.stringify({packages:{'':{},'node_modules/example':{resolved:'https://registry.npmjs.org/example/-/example-1.0.0.tgz',integrity:'sha512-YWJjZA=='}}});assert.match(dependencyIdentity(manifest,lock),/^[a-f0-9]{24}$/);for(const version of ['file:../private','git+https://example.com/private','https://example.com/pkg.tgz','npm:other@1.0.0'])assert.throws(()=>dependencyIdentity(JSON.stringify({dependencies:{example:version}}),lock),/públicas/);assert.throws(()=>dependencyIdentity(manifest,lock.replace('registry.npmjs.org','private.example')),/registry/);assert.throws(()=>dependencyIdentity(manifest,lock.replace('sha512-','sha1-')),/íntegros/);assert.throws(()=>dependencyIdentity('{"workspaces":["packages/*"]}',lock),/workspaces/);
+});

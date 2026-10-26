@@ -1,0 +1,40 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ares
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ares_local}
+      POSTGRES_DB: ares_db
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ares_postgres:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/001-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ares -d ares_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file: ./backend/.env
+    environment:
+      HOST: 0.0.0.0
+      ARES_ACCESS_MODE: shared
+      ARES_SERVE_FRONTEND: "true"
+      CORS_ORIGINS: http://localhost:3000,http://127.0.0.1:3000,http://localhost:5175,http://127.0.0.1:5175
+      DATABASE_URL: postgresql://ares:${POSTGRES_PASSWORD:-ares_local}@db:5432/ares_db
+      ARES_BACKUP_DIR: /app/.local-setup/backups
+    volumes:
+      - ares_backups:/app/.local-setup/backups
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+volumes:
+  ares_postgres:
+  ares_backups:

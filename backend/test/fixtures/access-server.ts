@@ -1,0 +1,11 @@
+import { randomUUID } from 'node:crypto';
+import { testDatabase } from '../postgres/database.js';
+import { AccessControl,currentActor } from '../../src/modules/access/access.js';
+import { UsageMeter,MeteredGateway } from '../../src/modules/access/usage.js';
+import { BioService } from '../../src/modules/bio/bio-service.js';
+import { createApp } from '../../src/server.js';
+import { SendMessage } from '../../src/modules/chat/application/send-message.js';
+const pool=await testDatabase(),owner=randomUUID(),access=new AccessControl(pool,owner,'local',async()=>{}),usage=new UsageMeter(pool,owner);
+const app=createApp({access,usage,isolatedRunner:true,bio:new BioService(pool,()=>currentActor()?.id??owner),allowedOrigins:['http://127.0.0.1:5176'],getSpec:async()=>({current:'Ficha protegida de prueba',master:'Referencia'}),checkDatabase:async()=>{},sendMessage:new SendMessage(new MeteredGateway({generate:async()=>({content:'Respuesta con consumo',sources:[]})},usage,'gemini'))});
+const server=app.listen(3103,'127.0.0.1',()=>console.log('Accesos SQL de pruebas en 3103'));
+process.on('SIGTERM',()=>server.close(()=>{void(async()=>{const ids=(await pool.query('SELECT id FROM access_users WHERE name LIKE $1',['Prueba acceso%'])).rows.map(r=>r.id);ids.push(owner);await pool.query('DELETE FROM usage_requests WHERE actor=ANY($1::uuid[])',[ids]);await pool.query('DELETE FROM commanders WHERE id=ANY($1::uuid[])',[ids]);await pool.end();})();}));
