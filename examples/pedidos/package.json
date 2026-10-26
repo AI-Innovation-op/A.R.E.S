@@ -1,0 +1,6 @@
+{
+  "name": "ares-ddd-orders-example",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test test/order.test.mjs", "check": "node --test test/order.test.mjs" }
+}
