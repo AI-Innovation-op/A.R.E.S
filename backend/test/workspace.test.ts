@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rm, symlink, link, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink, link, access, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { LocalFiles } from '../src/modules/workspace/infrastructure/local-files.js';
@@ -30,7 +30,7 @@ test('rechaza binarios, UTF-8 inválido y archivos que superan 64 KB', async () 
   await writeFile(path.join(root, 'binary.ts'), Buffer.from([0, 1, 2])); await writeFile(path.join(root, 'large.ts'), 'x'.repeat(65537));
   await assert.rejects(files.read(root, 'binary.ts'), /UTF-8/); await assert.rejects(files.read(root, 'large.ts'), /64 KB/);
 });
-test('al compartir protege la instalación del servidor y permite raíces de proyectos externas',async()=>{const installation=await fixture(),external=await fixture();let shared=false;const files=new LocalFiles([installation,external],()=>[],()=>shared?[installation]:[]);assert.equal(await files.root(installation),installation);shared=true;assert.deepEqual(files.allowedRoots,[external]);await assert.rejects(files.root(installation),/fuera de la instalación/);assert.equal(await files.root(external),external);});
+test('al compartir protege la instalación del servidor y permite raíces de proyectos externas',async()=>{const installation=await fixture(),external=await fixture();let shared=false;const files=new LocalFiles([installation,external],()=>[],()=>shared?[installation]:[]);assert.equal(await files.root(installation),await realpath(installation));shared=true;assert.deepEqual(files.allowedRoots,[external]);await assert.rejects(files.root(installation),/fuera de la instalación/);assert.equal(await files.root(external),await realpath(external));});
 test('ejecuta npm con cwd que contiene espacios, omite hooks y no hereda claves del servidor', async () => {
   const root = await fixture(), cwd = path.join(root, 'carpeta con espacios'); await mkdir(cwd);
   await writeFile(path.join(cwd, 'package.json'), JSON.stringify({ scripts: { precheck: 'node pre.mjs', check: 'node check.mjs' } }));
@@ -50,5 +50,13 @@ test('distingue fallo, cancelación y timeout, y redacta la salida antes de entr
   const failed = await runner.start(root, 'check').done; assert.equal(failed.status, 'FAILED'); assert.equal(failed.exitCode, 7, failed.output); assert.ok(!failed.output.includes('credencial-prueba-larga'));
   const pending = runner.start(root, 'test'); setTimeout(() => pending.cancel(), 200); assert.equal((await pending.done).status, 'CANCELLED');
   const limited = new LocalRunner(await findNpmCli(), value => value, 200); assert.equal((await limited.start(root, 'test').done).status, 'TIMEOUT');
-  const started=runner.start(root,'test');const deadline=Date.now()+15000;while(!started.snapshot().output.includes('WAITING_READY')&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,50));assert.match(started.snapshot().output,/WAITING_READY/);started.cancel();assert.equal((await started.done).status,'CANCELLED');
+  const started=runner.start(root,'test');
+  try {
+    // Cold PowerShell/Add-Type startup on hosted Windows can exceed 15 seconds.
+    // Stay below the runner's real 90-second timeout and still require process output.
+    const deadline=Date.now()+80000;
+    while(!started.snapshot().output.includes('WAITING_READY')&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,50));
+    assert.match(started.snapshot().output,/WAITING_READY/);
+    started.cancel();assert.equal((await started.done).status,'CANCELLED');
+  } finally { started.cancel();await started.done; }
 });

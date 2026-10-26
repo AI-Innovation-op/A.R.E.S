@@ -6,4 +6,5 @@
 **/playwright-report
 .git
 .local-setup
+.release-check
 *.png
