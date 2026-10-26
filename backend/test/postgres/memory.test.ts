@@ -1,0 +1,80 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { after, test } from 'node:test';
+import request from 'supertest';
+import { testDatabase } from './database.js';
+import { PostgresLibrary } from '../../src/modules/library/infrastructure/postgres-library.js';
+import { PostgresMemory } from '../../src/modules/memory/infrastructure/postgres-memory.js';
+import { MemoryService } from '../../src/modules/memory/application/memory-service.js';
+import { EMBEDDING_MODEL, type Embeddings } from '../../src/modules/memory/domain/memory.js';
+import { PostgresHistory } from '../../src/modules/chat/infrastructure/postgres-history.js';
+import { ConversationService } from '../../src/modules/chat/application/conversation-service.js';
+import { SendMessage } from '../../src/modules/chat/application/send-message.js';
+import { createApp } from '../../src/server.js';
+const pool = await testDatabase(); const owners: string[] = [];
+const vector = (position = 0) => Array.from({ length: 768 }, (_, i) => i === position ? 1 : 0);
+const embedding: Embeddings = { model: EMBEDDING_MODEL, embed: async texts => texts.map(() => vector()) };
+after(async () => { try { await pool.query('DELETE FROM commanders WHERE id=ANY($1::uuid[])', [owners]); } finally { await pool.end(); } });
+async function setup(content = '# Guía\nEl comando de inicio es npm run dev.') {
+  const owner = randomUUID(); owners.push(owner); const library = new PostgresLibrary(pool, owner);
+  const project = await library.createProject('Proyecto privado');
+  const artifact = await library.commit({ projectId: project.id, requestId: randomUUID(), module: 'documentation', format: 'README.md', title: 'Guía de inicio', context: 'Contexto que no debe indexarse: SECRETO_PRUEBA' }, { content, sources: [], provider: 'gemini', model: 'test' });
+  const repository = new PostgresMemory(pool, owner), service = new MemoryService(repository, () => embedding);
+  return { owner, library, project, artifact, repository, service };
+}
+test('indexa por lotes, reanuda, omite documentos preparados y consulta solo contenido generado', async () => {
+  const { project, service } = await setup('Guía 🚀 npm run dev. '.repeat(1100));
+  let status = await service.status(project.id); assert.equal(status.pendingDocuments, 1);
+  await assert.rejects(service.retrieve(project.id, 'inicio'), /Prepara la memoria/);
+  status = await service.index(project.id); assert.equal(status.chunks, 8); assert.equal(status.pendingDocuments, 1);
+  while (status.pendingDocuments) status = await service.index(project.id);
+  const chunks = status.chunks; assert.ok(chunks > 8); assert.equal(status.indexedDocuments, 1);
+  assert.equal((await service.index(project.id)).chunks, chunks);
+  const context = await service.retrieve(project.id, '¿Cómo inicio?'); assert.equal(context.references.length, 4);
+  assert.ok(context.references.every(item => !item.excerpt.includes('SECRETO_PRUEBA')));
+});
+test('filtra por propietario, proyecto, modelo y documentos completamente indexados', async () => {
+  const first = await setup(), second = await setup('NO DEBE SALIR ESTE PROYECTO');
+  await first.service.index(first.project.id); await second.service.index(second.project.id);
+  const context = await first.service.retrieve(first.project.id, 'inicio');
+  assert.ok(context.references.every(item => item.artifactId === first.artifact.id));
+  await assert.rejects(first.service.status(second.project.id), /No se encontró/);
+  await assert.rejects(first.service.index(second.project.id), /No se encontró/);
+  await assert.rejects(first.service.retrieve(second.project.id, 'privado'), /No se encontró/);
+  assert.equal((await first.repository.search(first.project.id, 'otro-modelo', vector())).length, 0);
+  assert.equal((await first.repository.search(first.project.id, EMBEDDING_MODEL, vector(1))).length, 0);
+  const otherHistory = new PostgresHistory(pool, first.owner);
+  await assert.rejects(otherHistory.create('Ajena', second.project.id), /No se encontró/);
+});
+test('un fallo de embeddings no confirma indexación y un lote SQL inválido se revierte completo', async () => {
+  const { project, service, repository } = await setup();
+  const failure = new MemoryService(repository, () => ({ model: EMBEDDING_MODEL, embed: async () => { throw new Error('cuota'); } }));
+  await assert.rejects(failure.index(project.id), /cuota/); assert.equal((await service.status(project.id)).chunks, 0);
+  const document = (await repository.next(project.id, EMBEDDING_MODEL))!;
+  await assert.rejects(repository.save(document, EMBEDDING_MODEL, [{ number: 0, text: 'válido', vector: vector() }, { number: 1, text: 'inválido', vector: [1] }], 2));
+  assert.equal((await service.status(project.id)).chunks, 0); assert.equal((await service.status(project.id)).indexedDocuments, 0);
+});
+test('guarda referencias con la respuesta, conserva la pregunta original y reintenta sin consultar de nuevo', async () => {
+  const { owner, project, service } = await setup(); await service.index(project.id);
+  const history = new PostgresHistory(pool, owner), conversation = await history.create('Nueva conversación', project.id);
+  let calls = 0;
+  const chat = new ConversationService(history, { generate: async messages => { calls++; assert.match(messages.at(-1)!.content, /npm run dev/); assert.match(messages.at(-1)!.content, /datos no confiables/); return { content: 'Inicia con npm run dev [D1].', sources: [], provider: 'openrouter', model: 'coder-test' }; } }, service);
+  const input = { conversationId: conversation.id, requestId: randomUUID(), revision: 0, task: 'programming' as const, message: '¿Cómo inicio?', useMemory: true };
+  const reply = await chat.send(input); assert.equal(reply.memory?.references.length, 1); await chat.send(input); assert.equal(calls, 1);
+  const restored = await history.read(conversation.id); assert.equal(restored.conversation.projectId, project.id);
+  assert.equal(restored.messages[0]!.content, input.message); assert.deepEqual(restored.messages[1]!.memory, reply.memory);
+  await assert.rejects(chat.send({ ...input, useMemory: false }), /ya se usó/);
+});
+test('protege la preparación HTTP y no acepta proyecto ni fragmentos arbitrarios al enviar un mensaje', async () => {
+  const { project, service, owner } = await setup(); const history = new PostgresHistory(pool, owner);
+  const conversation = await history.create('Sin proyecto'); let calls = 0;
+  const gateway = { generate: async () => { calls++; return { content: 'ok', sources: [] }; } };
+  const app = createApp({ allowedOrigins: ['http://localhost:5173'], checkDatabase: async () => {}, sendMessage: new SendMessage(gateway), memory: service, conversations: new ConversationService(history, gateway, service) });
+  assert.equal((await request(app).post(`/api/projects/${project.id}/memory/index`).send({})).status, 403);
+  assert.equal((await request(app).post(`/api/projects/${project.id}/memory/index`).set('Origin', 'http://localhost:5173').send({ text: 'dato ajeno' })).status, 400);
+  assert.equal((await request(app).post(`/api/projects/${project.id}/memory/index`).set('Origin', 'http://localhost:5173').send({})).status, 200);
+  const input = { requestId: randomUUID(), revision: 0, task: 'programming', message: 'Consulta', useMemory: true };
+  assert.equal((await request(app).post(`/api/conversations/${conversation.id}/messages`).set('Origin', 'http://localhost:5173').send(input)).status, 400);
+  assert.equal((await request(app).post(`/api/conversations/${conversation.id}/messages`).set('Origin', 'http://localhost:5173').send({ ...input, projectId: project.id })).status, 400);
+  assert.equal(calls, 0);
+});

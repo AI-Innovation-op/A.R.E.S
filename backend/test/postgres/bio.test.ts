@@ -1,0 +1,13 @@
+import assert from'node:assert/strict';import{randomUUID}from'node:crypto';import{test}from'node:test';import{testDatabase}from'./database.js';import{BioService}from'../../src/modules/bio/bio-service.js';
+test('Bio es opcional, persiste intervalos y pausas, rechaza versiones obsoletas y aísla preferencias',async()=>{
+ const pool=await testDatabase(),owner=randomUUID(),other=randomUUID();let now=Date.now();const service=new BioService(pool,()=>owner,()=>now);
+ try{const initial=await service.status();assert.equal(initial.enabled,false);assert.equal(initial.events.length,0);await assert.rejects(service.act({action:'start',requestId:randomUUID(),revision:0}),/Activa/);
+  let state=await service.configure({revision:0,enabled:true,focusMinutes:1,breakMinutes:1,waterMinutes:5,notifications:false});assert.equal(state.phase,'IDLE');const start={action:'start' as const,requestId:randomUUID(),revision:state.revision};state=await service.act(start);assert.equal(state.phase,'FOCUS');assert.equal(Date.parse(state.endsAt!),now+60000);assert.equal((await service.act(start)).events.length,1);
+  now+=30000;state=await service.act({action:'pause',requestId:randomUUID(),revision:state.revision});assert.equal(state.phase,'PAUSED_FOCUS');assert.equal(state.remainingSeconds,30);assert.equal(state.endsAt,null);now+=600000;
+  const restarted=new BioService(pool,()=>owner,()=>now);assert.equal((await restarted.status()).remainingSeconds,30);state=await restarted.act({action:'resume',requestId:randomUUID(),revision:state.revision});assert.equal(Date.parse(state.endsAt!),now+30000);
+  state=await service.act({action:'break',requestId:randomUUID(),revision:state.revision});assert.equal(state.phase,'BREAK');state=await service.act({action:'drink',requestId:randomUUID(),revision:state.revision});assert.equal(Date.parse(state.waterAt!),now+5*60000);
+  await assert.rejects(service.configure({revision:0,enabled:false,focusMinutes:1,breakMinutes:1,waterMinutes:5,notifications:false}),/otra pestaña/);
+  const isolated=await new BioService(pool,()=>other).status();assert.equal(isolated.enabled,false);assert.equal(isolated.events.length,0);state=await service.configure({revision:state.revision,enabled:false,focusMinutes:1,breakMinutes:1,waterMinutes:5,notifications:false});assert.equal(state.phase,'IDLE');assert.equal(state.endsAt,null);assert.equal(state.waterAt,null);
+  assert.equal((await pool.query('SELECT count(*)::int AS n FROM bio_telemetry_logs WHERE commander_id=$1',[owner])).rows[0].n,0);
+ }finally{try{await pool.query('DELETE FROM commanders WHERE id=ANY($1::uuid[])',[[owner,other]]);}finally{await pool.end();}}
+});

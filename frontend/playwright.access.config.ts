@@ -1,0 +1,2 @@
+import { defineConfig } from '@playwright/test';
+export default defineConfig({testDir:'./test/e2e',testMatch:'**/access.spec.ts',workers:1,fullyParallel:false,use:{baseURL:'http://127.0.0.1:5176',channel:'chrome',headless:true,viewport:{width:1440,height:1100},trace:'retain-on-failure'},webServer:[{command:'node ../backend/node_modules/tsx/dist/cli.mjs ../backend/test/fixtures/access-server.ts',url:'http://127.0.0.1:3103/health',timeout:30000},{command:'npm run dev -- --port 5176',url:'http://127.0.0.1:5176',env:{ARES_API_TARGET:'http://127.0.0.1:3103'},timeout:30000}]});

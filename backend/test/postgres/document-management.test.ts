@@ -1,0 +1,21 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import { after,test } from 'node:test';
+import { testDatabase } from './database.js';
+import { PostgresLibrary } from '../../src/modules/library/infrastructure/postgres-library.js';
+import { DocumentManagement } from '../../src/modules/library/application/document-management.js';
+import { LocalFiles } from '../../src/modules/workspace/infrastructure/local-files.js';
+import { MemoryService } from '../../src/modules/memory/application/memory-service.js';
+import { PostgresMemory } from '../../src/modules/memory/infrastructure/postgres-memory.js';
+import { EMBEDDING_MODEL } from '../../src/modules/memory/domain/memory.js';
+const pool=await testDatabase(),owner=randomUUID(),library=new PostgresLibrary(pool,owner),service=new DocumentManagement(pool,owner,new LocalFiles([]));
+after(async()=>{try{await pool.query('DELETE FROM commanders WHERE id=$1',[owner]);}finally{await pool.end();}});
+test('editar, aprobar y eliminar conservan versiones, sincronizan el canónico e invalidan la memoria',async()=>{
+ const project=await library.createProject('Documentos editables'),artifact=await library.commit({projectId:project.id,requestId:randomUUID(),module:'documentation',format:'README.md',title:'Original',context:'Ejemplo público'},{content:'# Original\nContenido anterior.\n',sources:[],provider:'gemini',model:'fixture'});
+ const memory=new MemoryService(new PostgresMemory(pool,owner),()=>({model:EMBEDDING_MODEL,embed:async texts=>texts.map(()=>Array.from({length:768},(_,i)=>i===0?1:0))}));await memory.index(project.id);assert.equal((await memory.status(project.id)).indexedDocuments,1);
+ await service.change(artifact.id,0,'edit',{title:'Actualizado',content:'# Actualizado\nContenido nuevo.\n'});const changed=await library.read(artifact.id);assert.equal(changed.revision,1);assert.equal(changed.status,'DRAFT');assert.equal((await memory.status(project.id)).indexedDocuments,0);assert.equal((await service.revisions(artifact.id))[0].content,artifact.content);
+ await assert.rejects(service.change(artifact.id,0,'approve'),/cambió/);await assert.rejects(new DocumentManagement(pool,randomUUID(),new LocalFiles([])).change(artifact.id,1,'approve'),/No se encontró/);
+ await service.change(artifact.id,1,'approve');assert.equal((await library.read(artifact.id)).status,'APPROVED');assert.equal((await pool.query('SELECT status FROM technical_documents WHERE id=$1',[artifact.technicalDocumentId])).rows[0].status,'APPROVED');
+ await service.change(artifact.id,2,'edit',{title:'Nueva revisión',content:'Nuevas notas'});assert.equal((await library.read(artifact.id)).status,'DRAFT');
+ await service.change(artifact.id,3,'delete');await assert.rejects(library.read(artifact.id),/No se encontró/);assert.equal((await pool.query('SELECT 1 FROM technical_documents WHERE id=$1',[artifact.technicalDocumentId])).rows.length,0);assert.equal((await pool.query('SELECT 1 FROM knowledge_embeddings WHERE artifact_id=$1',[artifact.id])).rows.length,0);
+});

@@ -1,0 +1,15 @@
+import{navigate}from'./navigation';
+import {expect,test} from '@playwright/test';
+test('Git local: selecciona archivos, crea commit y rama; sincroniza documentación mediante diff',async({page,context})=>{
+ test.setTimeout(180000);
+ for(const prefix of ['projects','artifacts','conversations'])await context.route(`**/api/${prefix}**`,async route=>{const response=await route.fetch({url:route.request().url().replace('127.0.0.1:5174','127.0.0.1:3102')});await route.fulfill({response});});
+ await page.goto('/');await navigate(page,/^Repositorio/);await page.getByRole('button',{name:'Nuevo proyecto',exact:true}).click();await page.getByLabel('Nombre del proyecto').fill('Git E2E');await page.getByRole('button',{name:'Crear proyecto',exact:true}).click();await page.getByRole('button',{name:'Conectar carpeta',exact:true}).click();
+ const git=page.getByRole('region',{name:'Control de versiones',exact:true});await git.getByRole('button',{name:'Iniciar Git local en esta carpeta',exact:true}).click();await expect(git.locator('.git-file')).toHaveCount(5,{timeout:60000});
+ for(const checkbox of await git.locator('.git-file input:not(:disabled)').all())await checkbox.check();await git.getByLabel('Nombre del autor').fill('Prueba E2E');await git.getByLabel('Correo del autor').fill('test@example.com');await git.getByLabel('Mensaje del commit').fill('Base local comprobada');await git.getByRole('button',{name:'Crear commit local de 5 archivos'}).click();await expect(git.getByRole('status').filter({hasText:'Commit local creado'})).toBeVisible({timeout:60000});
+ await git.getByText('Ramas',{exact:true}).click();await git.getByLabel('Nombre de rama').fill('feature/documentacion');await git.getByRole('button',{name:'Crear rama y cambiar',exact:true}).click();await expect(git).toContainText('Rama: feature/documentacion',{timeout:60000});
+ await navigate(page,/^Escudo Documental/);await page.getByLabel('Contexto, requisitos o código del proyecto').fill('Proyecto local de pruebas, explica inicio.');await page.getByRole('button',{name:'Forjar documento'}).click();await expect(page.getByRole('heading',{name:'Documento persistido',exact:true})).toBeVisible();await navigate(page,/^Biblioteca/);await page.locator('.artifact-card').first().click();await page.getByRole('button',{name:'Revisar sincronización con repositorio',exact:true}).click();
+ const sets=page.getByRole('region',{name:'Cambios de varios archivos',exact:true});await sets.locator('.proposal-list button').filter({hasText:'Sincroniza'}).first().click();await sets.getByRole('button',{name:'Aplicar conjunto revisado',exact:true}).click();await expect(sets.locator('.draft-label')).toContainText('Aplicado');
+ await git.getByRole('button',{name:'Actualizar Git',exact:true}).click();await expect(git.locator('.git-file')).toContainText('README.md',{timeout:60000});await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:'test-results/git-mobile.png',fullPage:true});
+});
+
+test.afterEach(async({context})=>{await context.unrouteAll({behavior:'ignoreErrors'});});

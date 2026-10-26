@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-build:
+    name: Unit and build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm --prefix backend ci
+      - run: npm --prefix frontend ci
+      - run: npm --prefix backend test
+      - run: npm --prefix frontend test
+      - run: npm --prefix backend run build
+      - run: npm --prefix frontend run build
+
+  integration:
+    name: PostgreSQL, Docker and Chrome
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      DATABASE_URL: postgresql://ares:ares_ci@127.0.0.1:5432/ares_db
+      ARES_BACKUP_ENABLED: 'false'
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: ares
+          POSTGRES_PASSWORD: ares_ci
+          POSTGRES_DB: ares_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ares -d ares_db"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            frontend/package-lock.json
+      - run: npm --prefix backend ci
+      - run: npm --prefix frontend ci
+      - name: PostgreSQL 16 backup tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          sudo ln -sf /usr/lib/postgresql/16/bin/pg_dump /usr/local/bin/pg_dump
+          sudo ln -sf /usr/lib/postgresql/16/bin/pg_restore /usr/local/bin/pg_restore
+      - run: npm run runner:prepare
+      - name: Install Chrome
+        working-directory: frontend
+        run: npx playwright install --with-deps chrome
+      - run: npm --prefix backend run test:db
+      - run: npm run test:isolation
+      # These suites share output directories and must run in sequence.
+      - run: npm --prefix frontend run test:e2e
+      - run: npm --prefix frontend run test:e2e:db
+      - run: npm --prefix frontend run test:access
