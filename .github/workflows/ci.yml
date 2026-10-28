@@ -38,12 +38,16 @@ jobs:
       - run: npm --prefix backend test
       - run: npm --prefix frontend test
       - run: npm --prefix backend run build
+      - run: node scripts/terminal.mjs --help
       - run: npm --prefix frontend run build
+      - run: npm run test:acceptance
+      - run: npm run check:versions
+      - run: npm run review:package
 
   integration:
     name: PostgreSQL, Docker and Chrome
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       DATABASE_URL: postgresql://ares:ares_ci@127.0.0.1:5432/ares_db
       ARES_BACKUP_ENABLED: 'false'
@@ -90,3 +94,9 @@ jobs:
       - run: npm --prefix frontend run test:e2e
       - run: npm --prefix frontend run test:e2e:db
       - run: npm --prefix frontend run test:access
+      - run: npm --prefix frontend run build
+      - run: npm --prefix frontend run test:production
+      - name: Build delivery image
+        run: docker build -t ares-local-review:1.0.0 -f backend/Dockerfile .
+      - name: Container delivery, temporary PostgreSQL and authenticated Chrome
+        run: node scripts/check-container.mjs

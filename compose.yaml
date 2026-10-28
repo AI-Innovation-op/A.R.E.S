@@ -30,6 +30,7 @@ services:
       ARES_BACKUP_DIR: /app/.local-setup/backups
     volumes:
       - ares_backups:/app/.local-setup/backups
+      - ares_settings:/app/.local-setup/settings
     ports:
       - "127.0.0.1:3000:3000"
     depends_on:
@@ -38,3 +39,4 @@ services:
 volumes:
   ares_postgres:
   ares_backups:
+  ares_settings:

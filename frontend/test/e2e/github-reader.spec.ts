@@ -1,0 +1,53 @@
+import { expect, test } from '@playwright/test';
+
+test('GitHub: selección explícita, lectura, informe y fuentes en el borrador', async ({ page }) => {
+  let analyses = 0, reads = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/github/analyze')) analyses++; if (request.url().endsWith('/api/github/read')) reads++; });
+  await page.goto('/');
+  const input = page.getByRole('textbox', { name: 'Mensaje para A.R.E.S.' }); await input.fill('Explícame las decisiones.');
+  const trigger = page.getByRole('button', { name: 'Leer GitHub', exact: true }); await trigger.click();
+  const reader = page.getByRole('dialog', { name: 'Leer GitHub', exact: true });
+  await reader.getByLabel('Repositorio público').fill('https://github.com/example/orders');
+  await reader.getByRole('button', { name: 'Inspeccionar', exact: true }).click();
+  await expect(reader).toContainText('Inventario completo');
+  await expect(reader.getByRole('button', { name: 'Leer selección', exact: true })).toBeDisabled();
+  await reader.getByLabel('Ver excluidos').check(); await expect(reader.getByRole('checkbox', { name: /.env/ })).toBeDisabled();
+  await reader.getByRole('checkbox', { name: /src\/order.ts/ }).check();
+  expect(analyses).toBe(0); expect(reads).toBe(0);
+  await reader.getByRole('button', { name: 'Leer selección', exact: true }).click();
+  await expect(reader).toContainText('1 leídos de 1 seleccionados');
+  const preview = reader.locator('.github-preview'); await preview.locator('summary').click();
+  await expect(preview).toContainText('export class Order');
+  expect(analyses).toBe(0); expect(reads).toBe(1);
+  await page.screenshot({ path: 'test-results/github-read-desktop.png' });
+  await reader.getByRole('button', { name: 'Analizar con OpenRouter', exact: true }).click();
+  await expect(reader).toBeHidden();
+  const result = page.getByRole('complementary', { name: 'Resultado en contexto' });
+  await expect(result).toBeVisible(); await expect(result).toContainText('Evidencia estática');
+  await expect(result.getByRole('button', { name: 'Guardar informe en Biblioteca' })).toBeDisabled();
+  await result.getByRole('tab', { name: 'Origen', exact: true }).click();
+  await expect(result).toContainText('1 leídos de 1 seleccionados; 3 rutas listadas');
+  await expect(result.getByRole('link', { name: /src\/order.ts/ })).toHaveAttribute('href', new RegExp(`/blob/${'a'.repeat(40)}/src/order.ts`));
+  await result.getByRole('button', { name: 'Usar en mensaje', exact: true }).click();
+  await expect(input).toHaveValue(/Explícame las decisiones/); await expect(input).toHaveValue(/Commit fijado: a{40}/); await expect(input).toHaveValue(/Definir invariantes/);
+  expect(analyses).toBe(1);
+  await result.getByRole('button', { name: 'Cerrar resultado' }).click();
+  await page.setViewportSize({ width: 390, height: 844 }); await trigger.click();
+  await expect(reader).toBeVisible();
+  await reader.getByRole('checkbox', { name: /README.md/ }).check();
+  await expect(reader).toContainText('Cambiaste la selección'); await expect(reader.getByRole('button', { name: 'Analizar con OpenRouter' })).toBeDisabled();
+  await page.screenshot({ path: 'test-results/github-read-mobile.png' });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.keyboard.press('Escape'); await expect(reader).toBeHidden(); await expect(trigger).toBeFocused();
+});
+
+test('GitHub: cancelar no abre un informe ni sustituye el borrador', async ({ page }) => {
+  await page.route('**/api/github/inspect', async route => { await new Promise(resolve => setTimeout(resolve, 1500)); await route.fulfill({ json: { id: 'late' } }).catch(() => {}); });
+  await page.goto('/');
+  const input = page.getByRole('textbox', { name: 'Mensaje para A.R.E.S.' }); await input.fill('Conservar borrador');
+  await page.getByRole('button', { name: 'Leer GitHub', exact: true }).click();
+  const reader = page.getByRole('dialog', { name: 'Leer GitHub', exact: true });
+  await reader.getByLabel('Repositorio público').fill('https://github.com/example/orders'); await reader.getByRole('button', { name: 'Inspeccionar', exact: true }).click();
+  await reader.getByRole('button', { name: 'Cancelar', exact: true }).click(); await expect(reader).toContainText('Operación cancelada');
+  await page.keyboard.press('Escape'); await expect(input).toHaveValue('Conservar borrador'); await expect(page.getByRole('complementary', { name: 'Resultado en contexto' })).toBeHidden();
+});

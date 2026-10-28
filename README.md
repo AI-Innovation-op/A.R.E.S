@@ -1,10 +1,14 @@
 # A.R.E.S. — consola de ingeniería
 
-Estado de la versión local al 26 de octubre de 2026. La ficha maestra v2.6 define el producto; [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md) registra lo implementado y sus límites. [PLAN-DE-TRABAJO.md](PLAN-DE-TRABAJO.md) conserva el orden autorizado.
+Versión **1.0.0**, actualizada el 27 de octubre de 2026. La ficha maestra v2.6 define el producto; [ESTADO-ACTUAL.md](ESTADO-ACTUAL.md) registra lo implementado y sus límites. [CONTINUIDAD-LOCAL.md](CONTINUIDAD-LOCAL.md) registra esta evolución y la autorización de publicación. Consulta [GitHub Actions](https://github.com/AI-Innovation-op/A.R.E.S/actions/workflows/ci.yml) para el resultado remoto del commit que descargues. El despliegue público es una decisión posterior.
+
+La [comparación de tres versiones](COMPARACION-TRES-VERSIONES.md) distingue beta v3.9, nuestra base publicada y esta implementación, con medidas de interfaz y pruebas controladas. El ejemplo sintético publicado `examples/pedidos` se conserva junto a los casos DDD posteriores.
+
+La [revisión de la beta 4.0](REFERENCIA-BETA-V4.md) fija la nueva referencia y detalla sus cambios. Nuestra versión incorpora ahora una terminal interactiva propia; los números de versión pertenecen a proyectos distintos.
 
 ## Iniciar
 
-Requiere Git, Node.js 24 LTS (mínimo 22.12) y Docker iniciado para PostgreSQL y las comprobaciones aisladas. En Windows, utiliza Docker Desktop con contenedores Linux. GitHub CLI autenticado es opcional y solo se necesita para publicar ramas/PR desde la consola. Desde PowerShell o una terminal:
+Requiere Git, Node.js **24 LTS, mínimo 24.11**, y Docker iniciado para PostgreSQL y las comprobaciones aisladas. En Windows, utiliza Docker Desktop con contenedores Linux. GitHub CLI autenticado es opcional y solo se necesita para publicar ramas/PR desde la consola. Desde PowerShell o una terminal:
 
 ```powershell
 git clone https://github.com/AI-Innovation-op/A.R.E.S.git
@@ -17,9 +21,11 @@ npm run dev
 
 Abre http://127.0.0.1:5175 y conserva la terminal abierta. El iniciador crea `backend/.env` desde la plantilla sin claves, prepara PostgreSQL, aplica migraciones e inicia el backend en el primer puerto propio/disponible entre 3000 y 3010. Configura el proxy de Vite y no detiene otras aplicaciones. `ARES_UI_PORT` cambia el puerto de interfaz; añade su origen a `CORS_ORIGINS`. PostgreSQL necesita el puerto local 5432 libre; si otra instalación ya lo utiliza, configura otro puerto en Compose y DATABASE_URL antes de arrancar.
 
-Configura Gemini y OpenRouter desde **Conexiones IA**. Las claves se guardan solo en `backend/.env`, excluido del control de versiones y de las imágenes Docker. Es un archivo local de texto, no un almacén cifrado. El modelo de Gemini debe estar disponible en tu proyecto; OpenRouter muestra su catálogo y permite elegir un modelo gratuito. La disponibilidad y las cuotas dependen de cada proveedor. “Backend conectado” confirma conectividad, no saldo ni cuota.
+Configura Gemini y OpenRouter desde **Conexiones IA**. En Node las claves se guardan en `backend/.env`, excluido del control de versiones y de las imágenes Docker; en Compose los ajustes editados se conservan en el volumen privado `ares_settings`. Son archivos locales de texto, no un almacén cifrado. El modelo de Gemini debe estar disponible en tu proyecto; OpenRouter muestra su catálogo y permite elegir un modelo gratuito. La disponibilidad y las cuotas dependen de cada proveedor. “Backend conectado” confirma conectividad, no saldo ni cuota.
 
 Sin DATABASE_URL puede usarse chat de sesión con límites de consumo en memoria. Si hay una base configurada pero está caída, las operaciones con contador persistente se bloquean hasta recuperarla, para no perder los límites. `ARES_SKIP_DATABASE=1` omite la preparación automática de Docker.
+
+Con la consola iniciada, abre otra terminal y ejecuta **`npm run terminal`**; en Windows también puedes abrir **`ares-terminal.cmd`**. Escribe `help`, `status` y `mode auto` para empezar. Incluye conversación progresiva, selección de proyecto e historial, lectura/auditoría, DDD estático, scripts revisados antes de confirmar su ejecución y preview/ZIP. Consulta [CLI-Y-MCP.md](CLI-Y-MCP.md) para comandos, acceso y límites. No reemplaza la instalación global de la beta.
 
 ## Capacidades
 
@@ -37,6 +43,14 @@ Sin DATABASE_URL puede usarse chat de sesión con límites de consumo en memoria
 | Bio-Armadura | Opcional y desactivada por defecto: foco, pausas, agua, pausa/reanudación persistida y avisos autorizados; sin inferir fatiga ni recopilar cámara/teclado |
 | Continuidad | Respaldos PostgreSQL, recuperación en base nueva, verificación de estructura/datos, retención y programación con el servidor abierto |
 | Acceso y consumo | Invitaciones de un uso, sesiones de siete días, roles, revocación, renovación de sesión y límites diarios/concurrentes |
+| Resultados | Documento, Mermaid, código, diff y origen junto al chat; guardar notas confirmadas y discutir sin perder fuentes ni reemplazar el borrador |
+| GitHub público | Commit fijo, selección de archivos, exclusiones y cobertura; PR con cabecera fija, sin comparación completa de la base ni comentarios automáticos |
+| Preview y ZIP | Fuentes estructuradas, compilación real HTML/CSS/JS/TS/Vue, vista aislada y exportación de fuentes/salida/manifiesto/licencias con huellas; versiones temporales |
+| Paleta | Ctrl+K o botón de acciones; abre recorridos reales sin activar micrófono, generar propuestas ni lanzar procesos automáticamente |
+| Terminal | REPL en español, SSE, modos manual/automático, historial por proyecto, lectura/auditoría, DDD, scripts preparados y confirmados por huella, preview/ZIP; sin push |
+| CLI JSON y MCP | API con proyecto fijo y permisos existentes; lectura por defecto y propuestas/IA optativas, sin aplicar/ejecutar/publicar desde estos dos adaptadores |
+
+La [guía desde cero](GUIA-DESDE-CERO.md) incluye los pasos de voz, GitHub y preview. [CLI-Y-MCP.md](CLI-Y-MCP.md) contiene la configuración de adaptadores. El caso [DDD Pedidos e Inventario](examples/ddd-acceptance/README.md) tiene reglas ejecutables y ADR, además de una comprobación que detecta quitar la invariante del pedido vacío (`npm run test:acceptance`). `npm run check:versions` comprueba metadatos; `npm run review:release` prepara un inventario local y busca coincidencias de credenciales antes de revisar una publicación.
 
 Los archivos, documentos, páginas y salidas se tratan como datos no confiables, no como instrucciones del sistema. El modelo propone y analiza; los botones del usuario inician las escrituras, comprobaciones y publicaciones. El prompt unificado está en `backend/prompts/ares-system-prompt.md`.
 
@@ -130,11 +144,15 @@ GitHub Actions instala las dependencias desde los lockfiles, ejecuta unitarias y
 
 Las comprobaciones reales de proveedores confirmaron streaming Gemini/OpenRouter y análisis de una imagen sintética. Google Search respondió `GEMINI_QUOTA`: queda pendiente repetir esa comprobación cuando haya cuota. La voz requiere compatibilidad y permiso del navegador; el dictado del navegador puede usar servicios en línea y el alternativo envía audio a Gemini. Audio e imágenes no se guardan; el texto que insertes y envíes sí forma parte del historial.
 
+Para repetir solo el transporte real con consultas sintéticas, después de compilar backend y arrancar la consola, ejecuta `node scripts/check-providers.mjs --live`. Usa cuota de Gemini y OpenRouter; no lee proyectos ni guarda conversaciones. Añade `--web` para probar Google Search. Sin `--live` muestra ayuda sin llamadas. Un resultado confirmado acredita streaming, contenido y proveedor esperado; no certifica la exactitud del texto. La evidencia local queda en `.local-setup/real-provider-validation.json`.
+
+`npm run review:package`, después del build backend, revisa las fuentes y genera un ZIP en `.local-setup/delivery`. Incluye manifiesto y hashes; excluye entorno privado, sesiones, datos, respaldos, dependencias instaladas y builds. Comprueba de nuevo cada hash y el CRC/contenido del ZIP. Esta entrega admite fuentes UTF-8; rechaza binarios sin convertirlos. No modifica Git ni publica nada. Conserva el resultado JSON y revisa el ZIP antes de preparar el push.
+
 ## Voz en español y primera conversación
 
 Consulta [GUIA-DESDE-CERO.md](GUIA-DESDE-CERO.md). La voz automática se activa desde la consola: lee hasta dos frases de cada respuesta nueva confirmada, con una voz española del navegador, selector y velocidad. El audio se puede detener o silenciar. No relee el historial al recargar ni recita el código o el indicador interno de pose. La matriz de demostración fue retirada de la navegación; las 16 poses se eligen automáticamente desde las respuestas y durante el streaming.
 
-Prompt v1.8: español claro, decisiones con ejemplos y distinción entre propuesta, simulación y acción confirmada. Admite ayuda cotidiana además de ingeniería. Las comprobaciones reales con Gemini y OpenRouter aclararon límites de acceso y respondieron a solicitudes personales; no se garantiza que un modelo nunca cometa errores. Se verificó síntesis nativa con Microsoft Pablo es-ES mediante eventos de inicio y finalización.
+Prompt v1.9: español claro, decisiones con ejemplos y distinción entre propuesta, simulación y acción confirmada. Exige declarar supuestos y no inventar consecuencias de negocio. Admite ayuda cotidiana además de ingeniería. Las comprobaciones reales con Gemini y OpenRouter aclararon límites de acceso y respondieron a solicitudes personales; no se garantiza que un modelo nunca cometa errores. Se verificó síntesis nativa con Microsoft Pablo es-ES mediante eventos de inicio y finalización.
 
 Se eliminaron las tres conversaciones de comprobación anteriores y sus seis mensajes. Las comprobaciones posteriores de modelos usaron el endpoint de sesión sin guardar historial. Se conserva el proyecto y su configuración. Las pruebas automatizadas persistentes usan exclusivamente la base de pruebas.
 

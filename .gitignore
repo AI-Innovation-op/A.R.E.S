@@ -9,6 +9,7 @@ playwright-report/
 .env.*.tmp
 .local-setup/
 .release-check/
+.delivery-check-*/
 *.log
 *.dump
 *.pem

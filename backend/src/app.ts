@@ -39,6 +39,9 @@ import { UsageMeter,MeteredGateway,MeteredEmbeddings,MeteredResearch } from './m
 import { writeProviderSettings } from './config/settings-file.js';
 import { DockerRunner,findDocker } from './modules/workspace/infrastructure/docker-runner.js';
 import {ConversationNotes} from './modules/library/application/conversation-notes.js';
+import { GitHubService } from './modules/github/github-service.js';
+import { GitHubPublicReader } from './modules/github/public-reader.js';
+import {PrototypeService} from './modules/prototypes/prototype-service.js';
 
 const env = loadEnv();
 const prompt = await readFile(new URL('../prompts/ares-system-prompt.md', import.meta.url), 'utf8');
@@ -60,7 +63,7 @@ if (database && env.DATABASE_AUTO_MIGRATE) {
   try { await migrateDatabase(database); schemaReady = true; }
   catch { console.log('PostgreSQL pendiente: el chat continúa en modo sesión hasta conectar la base.'); }
 }
-const installation=env.ARES_SERVE_FRONTEND?path.dirname(fileURLToPath(envFile)):path.dirname(path.dirname(fileURLToPath(envFile)));
+const installation=path.resolve(fileURLToPath(new URL(env.ARES_SERVE_FRONTEND?'../':'../../',import.meta.url)));
 const files = new LocalFiles(env.ARES_WORKSPACE_ROOTS?.split(';').map(root => root.trim()).filter(Boolean) ?? [installation], () => [geminiKey, openRouterKey],()=>accessControl.mode==='shared'?[installation]:[]);
 const workspaceRepository = database ? new PostgresWorkspace(database, env.LOCAL_COMMANDER_ID) : undefined;
 const runner=env.ARES_RUNNER_MODE==='docker'?new DockerRunner(await findDocker(),files):new LocalRunner(await findNpmCli(),text=>files.redact(text));
@@ -94,6 +97,8 @@ const app = createApp({
   publicDirectory:env.ARES_SERVE_FRONTEND?fileURLToPath(new URL('../public/',import.meta.url)):undefined,
   bio:database?new BioService(database,()=>currentActor()?.id??env.LOCAL_COMMANDER_ID):undefined,
   research:new ResearchService(()=>geminiKey?new MeteredResearch(new GeminiResearch(geminiKey,providers.gemini.model),usage):null,files),
+  github: new GitHubService(new GitHubPublicReader(), routed, text => files.redact(text), () => currentActor()?.id ?? env.LOCAL_COMMANDER_ID, database ? new PostgresLibrary(database, env.LOCAL_COMMANDER_ID) : undefined),
+  prototypes:new PrototypeService(()=>currentActor()?.id??env.LOCAL_COMMANDER_ID,text=>files.redact(text)),
   documents:database?new DocumentManagement(database,env.LOCAL_COMMANDER_ID,files):undefined,
   conversationNotes:database?new ConversationNotes(database,env.LOCAL_COMMANDER_ID,files):undefined,
   codeMemory,

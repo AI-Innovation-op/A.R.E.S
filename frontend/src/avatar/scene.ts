@@ -5,6 +5,7 @@ import { createVoxelEffects } from './effects';
 import type { Pose } from '../domain/poses';
 
 export interface AvatarScene {
+  setActivity(activity: 'idle'|'listening'|'thinking'|'speaking'): void;
   setPose(pose: Pose): void;
   setMotion(enabled: boolean): void;
   setPatrol(enabled: boolean): void;
@@ -49,6 +50,7 @@ export function mountAvatarScene(host: HTMLElement, initialPose: Pose, onContext
   dustGeometry.setAttribute('position', new THREE.BufferAttribute(dust, 3));
   const dustMaterial = new THREE.PointsMaterial({ color: '#00ffaa', size: .025, transparent: true, opacity: .6, depthWrite: false });
   const particles = new THREE.Points(dustGeometry, dustMaterial); scene.add(particles);
+  let activity:'idle'|'listening'|'thinking'|'speaking'='idle';
   let motion = true, patrol = false, visible = true, disposed = false, lastTime = 0, elapsed = 0, turn = 0, frames = 0;
   function resize() {
     const width = host.clientWidth, height = host.clientHeight;
@@ -56,26 +58,32 @@ export function mountAvatarScene(host: HTMLElement, initialPose: Pose, onContext
     camera.aspect = width / height; camera.updateProjectionMatrix(); renderer.setSize(width, height, false);
   }
   const resizeObserver = new ResizeObserver(resize); resizeObserver.observe(host); resize();
-  const visibilityObserver = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? false; }); visibilityObserver.observe(host);
+  const visibilityObserver = new IntersectionObserver(entries => { visible = entries[0]?.isIntersecting ?? false; updateLoop(); }); visibilityObserver.observe(host);
   const lost = (event: Event) => { event.preventDefault(); onContextLost(); }; canvas.addEventListener('webglcontextlost', lost);
-  renderer.setAnimationLoop((timestamp: number) => {
+  function animate(timestamp: number) {
     if (disposed || !visible || document.hidden) { lastTime = timestamp; return; }
     const delta = Math.min((timestamp - (lastTime || timestamp)) / 1000, .05); lastTime = timestamp;
     if (motion) elapsed += delta;
     model.update(elapsed, delta, motion, patrol); pivot.rotation.y = turn;
     effects.update(elapsed,delta,motion);
+    ringMaterial.opacity=activity==='speaking'?(motion?.75+Math.sin(elapsed*7)*.2:.9):activity==='listening'?.9:.65;
+    canvas.dataset.activity=activity;
     canvas.dataset.effects=motion?'matrix':'paused';
     if (motion) particles.rotation.y = elapsed * .07;
     controls.update(); renderer.render(scene, camera);
     if (frames < 2) canvas.dataset.frames = String(++frames);
-  });
+  }
+  function updateLoop(){const running=!disposed&&visible&&!document.hidden;lastTime=0;renderer.setAnimationLoop(running?animate:null);canvas.dataset.loop=running?'running':'paused';}
+  document.addEventListener('visibilitychange',updateLoop);updateLoop();
   return {
+    setActivity(value){activity=value;},
     setPose(pose) { model.setPose(pose); }, setMotion(enabled) { motion = enabled; }, setPatrol(enabled) { patrol = enabled; },
     resetView() { turn = 0; controls.reset(); }, turn(direction) { turn += direction * Math.PI / 8; },
     triggerRefactor(){effects.trigger();canvas.dataset.refactors=String(Number(canvas.dataset.refactors??0)+1);},
     dispose() {
       if (disposed) return;
       disposed = true; renderer.setAnimationLoop(null); resizeObserver.disconnect(); visibilityObserver.disconnect();
+      document.removeEventListener('visibilitychange',updateLoop);
       canvas.removeEventListener('webglcontextlost', lost); controls.dispose(); model.dispose();effects.dispose();
       platformGeometry.dispose(); platformMaterial.dispose(); ringGeometry.dispose(); ringMaterial.dispose();
       dustGeometry.dispose(); dustMaterial.dispose(); renderer.dispose(); canvas.remove();

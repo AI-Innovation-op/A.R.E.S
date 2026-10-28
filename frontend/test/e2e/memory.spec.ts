@@ -1,4 +1,4 @@
-import{navigate}from'./navigation';
+import{navigate,openChatOptions}from'./navigation';
 import { expect, test } from '@playwright/test';
 test('RAG SQL: prepara documentos, responde con referencias y las recupera tras recargar', async ({ page, context }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
@@ -25,6 +25,7 @@ test('RAG SQL: prepara documentos, responde con referencias y las recupera tras 
   await expect(page.getByRole('region', { name: 'Memoria del proyecto' })).toContainText('1 de 1 documentos listos');
   await navigate(page,/Consola táctica/);
   await page.getByRole('button', { name: 'Nueva conversación', exact: true }).click();
+  await openChatOptions(page,'project');
   await page.getByLabel('Proyecto', { exact: true }).selectOption({ label: 'Proyecto memoria E2E' });
   await page.getByRole('checkbox', { name: 'Consultar memoria del proyecto' }).check();
   await page.getByLabel('Modo', { exact: true }).selectOption('programming');
@@ -43,6 +44,7 @@ test('RAG SQL: prepara documentos, responde con referencias y las recupera tras 
   await expect(page.getByRole('region', { name: 'Borrador guardado', exact: true })).toContainText('npm run dev');
   await page.setViewportSize({ width: 390, height: 844 });
   await navigate(page,/Consola táctica/);
+  await openChatOptions(page,'project');
   await expect(page.getByRole('checkbox', { name: 'Consultar memoria del proyecto' })).toBeChecked();
   await expect(page.locator('.conversation-project')).toContainText('Proyecto memoria E2E');
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);

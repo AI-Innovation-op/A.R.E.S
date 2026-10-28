@@ -12,6 +12,7 @@ import { useLibraryStore } from '../stores/library';
 import { lexer } from 'marked';
 import ComparativeDiff from './ComparativeDiff.vue';
 const props = defineProps<{ moduleId: ModuleId }>();
+defineEmits<{ openResult: [module: ModuleId] }>();
 const store = useConsoleStore();
 const library = useLibraryStore();
 const config = computed(() => modules[props.moduleId]);
@@ -48,6 +49,7 @@ async function copy() {
       <p v-if="store.moduleNotice" class="result-note" role="status">{{ store.moduleNotice }}</p>
       <div v-if="store.pending" class="thinking" role="status"><span></span><span></span><span></span> Preparando tu borrador…</div>
       <section v-if="state.result" class="module-result" aria-label="Borrador generado">
+        <button type="button" class="connection-action" :disabled="store.pending" @click="$emit('openResult', moduleId)"><ArrowUpRight :size="15"/> Ver junto al chat</button>
         <p class="artifact-save-status" role="status">{{ state.artifactId ? `Guardado en ${state.savedProject} · ${state.savedTitle}` : 'Sin guardar · disponible solo en esta sesión' }}</p>
         <div v-if="state.provider" class="response-provider">{{ state.provider === 'gemini' ? 'GEMINI' : 'OPENROUTER' }} <span>· {{ state.model }}</span></div>
         <div class="result-toolbar"><span class="draft-label">BORRADOR · REVISIÓN PENDIENTE</span><div>

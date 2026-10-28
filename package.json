@@ -3,6 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "terminal":"node scripts/terminal.mjs",
+    "check:versions":"node scripts/check-versions.mjs",
+    "review:release":"node scripts/review-release.mjs",
+    "review:package":"node scripts/package-review.mjs",
+    "test:acceptance": "node scripts/check-ddd-acceptance.mjs",
     "dev": "node scripts/dev.mjs",
     "db:up": "node scripts/db-up.mjs",
     "backup:create": "npm --prefix backend run backup:create",
@@ -12,5 +17,9 @@
     "runner:prepare": "node scripts/runner-prepare.mjs",
     "access:recover": "npm --prefix backend run access:recover",
     "test:isolation": "npm --prefix backend run test:isolation"
+  },
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=24.11.0"
   }
 }

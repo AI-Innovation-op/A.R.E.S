@@ -1,3 +1,4 @@
+import {openChatOptions} from './navigation';
 import { expect, test } from '@playwright/test';
 
 test('PostgreSQL conserva contexto, proveedor y conversación al recargar y cambiar de pestaña', async ({ page, context }) => {
@@ -7,6 +8,7 @@ test('PostgreSQL conserva contexto, proveedor y conversación al recargar y camb
     await route.fulfill({ response });
   });
   await page.goto('/');
+  await openChatOptions(page,'project');
   await expect(page.getByRole('button', { name: 'Reconectar historial' })).toBeEnabled();
   expect(await page.evaluate(()=>(window as unknown as{__historyVoice:string[]}).__historyVoice)).toEqual([]);
   await expect(page.locator('.session-badge').first()).toHaveText('POSTGRESQL');
@@ -28,6 +30,7 @@ test('PostgreSQL conserva contexto, proveedor y conversación al recargar y camb
   await expect(page.locator('.response-provider').last()).toContainText('GEMINI');
   await page.getByRole('button', { name: 'Nueva conversación' }).click();
   await expect(page.locator('.message')).toHaveCount(0);
+  await openChatOptions(page,'project');
   await page.getByLabel('Historial', { exact: true }).selectOption(firstId!);
   await expect(page.locator('.message')).toHaveCount(4);
   await page.reload();

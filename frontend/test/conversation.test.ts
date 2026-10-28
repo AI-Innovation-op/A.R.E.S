@@ -1,7 +1,7 @@
 import {beforeEach,afterEach,it,expect,vi} from 'vitest';
 import {createPinia,setActivePinia,disposePinia} from 'pinia';
 import {nextTick} from 'vue';
-import {voiceCommand,completeVoiceTurn,type Recognition} from '../src/domain/conversation';
+import {voiceCommand,completeVoiceTurn,recognitionFrame,type Recognition} from '../src/domain/conversation';
 import {useConversationStore} from '../src/stores/conversation';
 import {useConsoleStore} from '../src/stores/console';
 let recognitions:FakeRecognition[]=[],utterance:{onstart:(()=>void)|null;onend:(()=>void)|null;text:string}|undefined;
@@ -16,7 +16,28 @@ beforeEach(()=>{pinia=createPinia();setActivePinia(pinia);vi.useFakeTimers();loc
 afterEach(()=>{useConversationStore().stop();disposePinia(pinia);vi.clearAllTimers();vi.useRealTimers();vi.unstubAllGlobals();});
 async function finishSpeech(){await nextTick();utterance?.onstart?.();await nextTick();utterance?.onend?.();await nextTick();await vi.advanceTimersByTimeAsync(650);}
 async function wake(){const store=useConversationStore();store.start();recognitions.at(-1)!.emit('ARES');await finishSpeech();expect(store.phase).toBe('listening');return store;}
-it('ARES solo despierta, preserva contenido/caso y okey solo cierra al final',()=>{expect(voiceCommand('Ares.')).toEqual({kind:'wake',remainder:''});expect(voiceCommand('ARES, Explícame OrderId')).toEqual({kind:'wake',remainder:'Explícame OrderId'});expect(voiceCommand('Ey A.R.E.S., Explícame OrderId')).toEqual({kind:'wake',remainder:'Explícame OrderId'});expect(voiceCommand('mi amigo dijo ares')).toEqual({kind:'none'});expect(voiceCommand('áreas de trabajo')).toEqual({kind:'none'});expect(completeVoiceTurn('Quiero decir okey dentro de una frase').complete).toBe(false);expect(completeVoiceTurn('Organiza mi día, okey.')).toEqual({complete:true,text:'Organiza mi día,'});});
+it('ARES solo despierta, preserva contenido/caso y okey solo cierra al final',()=>{expect(voiceCommand('Ares.')).toEqual({kind:'wake',remainder:''});expect(voiceCommand('ARES, Explícame OrderId')).toEqual({kind:'wake',remainder:'Explícame OrderId'});expect(voiceCommand('Ey A.R.E.S., Explícame OrderId')).toEqual({kind:'wake',remainder:'Explícame OrderId'});expect(voiceCommand('mi amigo dijo ares')).toEqual({kind:'none'});expect(voiceCommand('áreas de trabajo')).toEqual({kind:'none'});expect(completeVoiceTurn('Quiero decir okey dentro de una frase').complete).toBe(false);expect(completeVoiceTurn('Organiza mi día, okey.')).toEqual({complete:true,text:'Organiza mi día'});expect(completeVoiceTurn('Organiza mi día,okey.').complete).toBe(true);expect(completeVoiceTurn('objeto.ok').complete).toBe(false);});
+
+it('distingue provisionales reemplazados y finales acumulados sin duplicarlos',()=>{
+  const seen=new Set<number>(),results=[{isFinal:false,0:{transcript:'Pregunta provisional'}}];
+  expect(recognitionFrame(results,seen)).toEqual({finals:[],interim:'Pregunta provisional'});
+  results[0]={isFinal:true,0:{transcript:'Pregunta final.'}};results.push({isFinal:false,0:{transcript:'Segunda parte'}});
+  expect(recognitionFrame(results,seen)).toEqual({finals:['Pregunta final.'],interim:'Segunda parte'});
+  expect(recognitionFrame(results,seen)).toEqual({finals:[],interim:'Segunda parte'});
+  results[1]={isFinal:true,0:{transcript:'okey.'}};expect(recognitionFrame(results,seen).finals).toEqual(['okey.']);
+});
+it('un evento con ARES y varios finales conserva todo el turno y solo envía una vez',async()=>{
+  const store=useConversationStore();store.start();store.start();expect(recognitions).toHaveLength(1);
+  const results=['ARES.','Explica OrderId.','Con ejemplos,okey.'].map(text=>({isFinal:true,0:{transcript:text}}));
+  recognitions[0]!.onresult?.({resultIndex:0,results});await vi.advanceTimersByTimeAsync(0);
+  expect(fetch).toHaveBeenCalledTimes(1);expect(JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1].body).message).toBe('Explica OrderId. Con ejemplos');
+});
+it('una respuesta tardía de un turno detenido no borra otro borrador ni reactiva voz',async()=>{
+  const store=await wake(),chat=useConsoleStore();let finish!:()=>void;
+  vi.spyOn(chat,'runChat').mockImplementation(async()=>{await new Promise<void>(resolve=>{finish=resolve;});chat.completedReply={id:100,content:'Respuesta tardía'};});
+  store.transcript='Turno anterior';const sending=store.send();store.stop();store.transcript='Nueva idea';store.start();finish();await sending;
+  expect(store.transcript).toBe('Nueva idea');expect(store.phase).toBe('review');
+});
 it('no escucha al cargar, ignora ambiente en espera y una pausa nunca envía',async()=>{const store=useConversationStore();expect(recognitions).toHaveLength(0);store.start();recognitions.at(-1)!.emit('comida y cancelar');expect(store.phase).toBe('standby');expect(fetch).not.toHaveBeenCalled();recognitions.at(-1)!.emit('ARES');await finishSpeech();recognitions.at(-1)!.emit('Organiza mi día');await vi.advanceTimersByTimeAsync(90000);expect(store.phase).toBe('review');expect(store.transcript).toBe('Organiza mi día');expect(fetch).not.toHaveBeenCalled();});
 it('okey envía una sola vez; pausa captura mientras habla y reanuda el siguiente turno',async()=>{const store=await wake(),recognition=recognitions.at(-1)!;recognition.emit('Ayúdame con mis tareas');recognition.emit('okey');await vi.advanceTimersByTimeAsync(0);await nextTick();expect(fetch).toHaveBeenCalledTimes(1);expect(JSON.parse((fetch as ReturnType<typeof vi.fn>).mock.calls[0]![1].body).message).toBe('Ayúdame con mis tareas');expect(recognition.active).toBe(false);expect(store.phase).toBe('speaking');recognition.emit('eco okey');expect(fetch).toHaveBeenCalledTimes(1);await finishSpeech();expect(store.phase).toBe('listening');expect(recognitions.at(-1)!.active).toBe(true);});
 it('permiso denegado apaga y no reinicia; conserva transcripción al reactivar',async()=>{const store=await wake();recognitions.at(-1)!.emit('Borrador pendiente');recognitions.at(-1)!.onerror?.({error:'not-allowed'});expect(store.enabled).toBe(false);expect(store.error).toContain('Autoriza');const count=recognitions.length;await vi.advanceTimersByTimeAsync(2000);expect(recognitions).toHaveLength(count);expect(store.transcript).toBe('Borrador pendiente');store.start();expect(store.phase).toBe('review');expect(store.transcript).toBe('Borrador pendiente');expect(recognitions).toHaveLength(count);});

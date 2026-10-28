@@ -2,8 +2,10 @@ import { safeMemory, type MemoryContext } from './memory';
 import type { WorkspaceContext } from './workspace';
 import { generationData } from './stream';
 export interface Message { role: 'user' | 'model'; content: string }
-export interface Source { uri: string; title: string }
-export type Provider = 'gemini' | 'openrouter';
+export type{Source}from'../../../packages/contracts/index.js';
+import type{Source}from'../../../packages/contracts/index.js';
+export type {Provider} from '../../../packages/contracts/index.js';
+import type {Provider} from '../../../packages/contracts/index.js';
 export type ChatTask = 'programming' | 'documentation' | 'audit' | 'architecture';
 export interface Attribution { provider?: Provider; model?: string }
 export interface Reply extends Attribution { content: string; sources: Source[]; memory?: MemoryContext; workspace?: WorkspaceContext }

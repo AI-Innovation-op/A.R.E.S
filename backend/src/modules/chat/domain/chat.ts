@@ -14,7 +14,8 @@ export interface ChatReply {
   workspace?: WorkspaceContext;
 }
 
-export type Provider = 'gemini' | 'openrouter';
+export type {Provider} from '../../../../../packages/contracts/index.js';
+import type {Provider} from '../../../../../packages/contracts/index.js';
 export type ChatTask = 'programming' | 'documentation' | 'audit' | 'architecture';
 export function providerForTask(task: ChatTask): Provider { return task === 'documentation' ? 'gemini' : 'openrouter'; }
 export interface GenerationOptions { purpose?: 'proposal';signal?:AbortSignal;onDelta?:(text:string)=>void|Promise<void> }

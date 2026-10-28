@@ -1,5 +1,12 @@
 import { expect, test } from '@playwright/test';
 
+test('el avatar libera su bucle al ocultarse y lo recupera al volver',async({page})=>{
+ await page.addInitScript(()=>{const host=window as Window&{__aresFrames?:number};host.__aresFrames=0;const native=requestAnimationFrame.bind(window);window.requestAnimationFrame=callback=>native(time=>{host.__aresFrames=(host.__aresFrames??0)+1;callback(time);});});
+ await page.goto('/');const canvas=page.locator('canvas[data-renderer="three"]');await expect(canvas).toHaveAttribute('data-frames','2');const count=()=>page.evaluate(()=>(window as Window&{__aresFrames?:number}).__aresFrames??0);await expect.poll(count).toBeGreaterThan(2);
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{value:true,configurable:true});document.dispatchEvent(new Event('visibilitychange'));});await expect(canvas).toHaveAttribute('data-loop','paused');const paused=await count();await page.waitForTimeout(250);expect(await count()).toBeLessThanOrEqual(paused+1);
+ await page.evaluate(()=>{Object.defineProperty(document,'hidden',{value:false,configurable:true});document.dispatchEvent(new Event('visibilitychange'));});await expect(canvas).toHaveAttribute('data-loop','running');await expect.poll(count).toBeGreaterThan(paused+1);
+});
+
 test('avatar WebGL real: poses automáticas desde respuestas, paseo, rotación y compañero flotante', async ({ page }) => {
   const errors: string[] = []; page.on('pageerror', error => errors.push(error.message));
   await page.goto('/');
@@ -67,6 +74,7 @@ test('avatar visible en móvil y respeta movimiento reducido', async ({ page }) 
   await page.goto('/');
   await expect(page.locator('.avatar-experience')).toHaveAttribute('data-mode', '3d', { timeout: 20000 });
   await expect(page.getByRole('img', { name: /Avatar 3D/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Ajustar avatar', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Pausar animación', exact: true })).toBeDisabled();
   await expect(page.getByText('Movimiento reducido · pose estática')).toBeVisible();
   await expect(page.locator('canvas')).toHaveAttribute('data-effects', 'paused');

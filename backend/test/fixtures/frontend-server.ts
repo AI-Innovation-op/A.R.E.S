@@ -5,8 +5,12 @@ import { SendMessage } from '../../src/modules/chat/application/send-message.js'
 import { HttpError } from '../../src/shared/http-error.js';
 import { ResearchService } from '../../src/modules/research/research.js';
 import { LocalFiles } from '../../src/modules/workspace/infrastructure/local-files.js';
+import { githubFixture } from './github.js';
+import {PrototypeService} from '../../src/modules/prototypes/prototype-service.js';
 
 const app = createApp({ access:new AccessControl(null,'00000000-0000-4000-8000-000000000001','local',async()=>{}),getSpec:async()=>({current:'Control del Documento',master:'Referencia de prueba'}),
+  github: githubFixture(),
+  prototypes:new PrototypeService(()=> 'fixture',text=>new LocalFiles([]).redact(text)),
   research:new ResearchService(()=>({research:async input=>({content:input.mode==='audio'?'Texto transcrito de prueba':input.mode==='image'?'# Imagen analizada\nEjemplo visual de prueba.':'# Investigación web\nResultado apoyado por una fuente de prueba.',sources:input.mode==='web'?[{uri:'https://example.com/docs',title:'Fuente de prueba'}]:[],provider:'gemini',model:'research-fixture',...(input.mode==='web'?{suggestions:'<div>Buscar en Google</div><script>alert(1)</script>'}:{})})}),new LocalFiles([])),
   allowedOrigins: ['http://127.0.0.1:5174'],
   checkDatabase: async () => {},

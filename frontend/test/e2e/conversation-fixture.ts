@@ -1,5 +1,5 @@
 import type {Page} from '@playwright/test';
-interface Driver { emit(text:string,final?:boolean):void; finish():void; deny():void; active():boolean; starts():number; spoken:{text:string;lang:string}[] }
+interface Driver { emit(text:string,final?:boolean):void; frame(parts:{text:string;final:boolean}[]):void; finish():void; deny():void; active():boolean; starts():number; spoken:{text:string;lang:string}[] }
 declare global {interface Window { __aresTalk:Driver }}
 export async function mockConversation(page:Page){await page.addInitScript(()=>{
  type Result={isFinal:boolean;0:{transcript:string}};
@@ -7,5 +7,5 @@ export async function mockConversation(page:Page){await page.addInitScript(()=>{
  class Recognition {lang='';continuous=false;interimResults=false;maxAlternatives=1;active=false;results:Result[]=[];onstart:(()=>void)|null=null;onend:(()=>void)|null=null;onerror:((e:{error:string})=>void)|null=null;onresult:((e:{resultIndex:number;results:Result[]})=>void)|null=null;start(){current=this;this.active=true;starts++;queueMicrotask(()=>this.onstart?.());}stop(){this.active=false;this.onend?.();}abort(){this.active=false;}}
  class Utterance {text:string;lang='';voice:unknown;rate=1;pitch=1;onstart:(()=>void)|null=null;onend:(()=>void)|null=null;onerror:unknown;constructor(text:string){this.text=text;}}
  Object.defineProperty(window,'SpeechRecognition',{value:Recognition,configurable:true});Object.defineProperty(window,'SpeechSynthesisUtterance',{value:Utterance,configurable:true});Object.defineProperty(window,'speechSynthesis',{value:{getVoices:()=>[{voiceURI:'test-es',name:'Español de prueba',lang:'es-PE',localService:true}],cancel(){},addEventListener(){},removeEventListener(){},speak(value:Utterance){utterance=value;spoken.push({text:value.text,lang:value.lang});queueMicrotask(()=>value.onstart?.());}},configurable:true});
- window.__aresTalk={emit(text,final=true){if(!current)return;const index=current.results.length;current.results.push({isFinal:final,0:{transcript:text}});current.onresult?.({resultIndex:index,results:current.results});},finish(){utterance?.onend?.();},deny(){current?.onerror?.({error:'not-allowed'});},active:()=>current?.active??false,starts:()=>starts,spoken};
+ window.__aresTalk={frame(parts){if(!current)return;current.results=parts.map(part=>({isFinal:part.final,0:{transcript:part.text}}));current.onresult?.({resultIndex:0,results:current.results});},emit(text,final=true){if(!current)return;const index=current.results.length;current.results.push({isFinal:final,0:{transcript:text}});current.onresult?.({resultIndex:index,results:current.results});},finish(){utterance?.onend?.();},deny(){current?.onerror?.({error:'not-allowed'});},active:()=>current?.active??false,starts:()=>starts,spoken};
 });}

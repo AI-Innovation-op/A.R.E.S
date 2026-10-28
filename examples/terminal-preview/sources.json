@@ -1,0 +1,17 @@
+{
+  "entry": "index.html",
+  "files": [
+    {
+      "path": "index.html",
+      "content": "<!doctype html><html lang=\"es\"><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><link rel=\"stylesheet\" href=\"./style.css\"></head><body><main><p>Ejemplo sintético de terminal</p><h1>Pedido de demostración</h1><p id=\"price\"></p><button id=\"add\">Sumar una unidad</button><small>No realiza pagos ni persiste pedidos.</small></main><script type=\"module\" src=\"./main.ts\"></script></body></html>"
+    },
+    {
+      "path": "main.ts",
+      "content": "let units: number = 17; const price = document.querySelector('#price')!; const render = () => { price.textContent = 'Unidades: ' + units; }; document.querySelector('#add')!.addEventListener('click', () => { units++; render(); }); render();"
+    },
+    {
+      "path": "style.css",
+      "content": "body{margin:0;background:#071115;color:#e5f1f1;font:18px/1.6 system-ui;padding:30px}main{max-width:550px;margin:auto}button{padding:12px 18px;border:1px solid #41e8ad;background:#14392f;color:#8bffce;border-radius:8px;cursor:pointer}small{display:block;margin-top:20px;color:#95b5c0}"
+    }
+  ]
+}

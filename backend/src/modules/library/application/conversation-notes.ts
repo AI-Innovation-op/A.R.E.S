@@ -14,7 +14,15 @@ export class ConversationNotes {
     if(!row.repository_id)throw new HttpError(409,'NOTES_PROJECT_REQUIRED','Para documentar la conversación, vincúlala a un proyecto antes del primer mensaje.');
     if(!row.provider||!row.model)throw new HttpError(409,'NOTES_ATTRIBUTION_REQUIRED','La respuesta no tiene un proveedor confirmado.');
     const input={projectId:row.repository_id,requestId:messageId,module:'documentation' as const,format:'Nota de conversación',title:'Conversación · '+this.files.redact(row.question).replace(/\s+/g,' ').slice(0,70),context:`Copia de una respuesta confirmada. Conversación ${conversationId}; mensaje ${messageId}. No se generó documentación adicional ni se ejecutaron acciones.`};
-    const library=new PostgresLibrary(this.pool,this.owner),existing=await library.prepare(input);if(existing)return existing;
+    const library=new PostgresLibrary(this.pool,this.owner);
+    // A saved note may have been edited or approved. Reopening its source must
+    // return that document, without overwriting the user's revision or duplicating it.
+    const saved=await this.pool.query<{id:string}>(`SELECT a.id FROM module_artifacts a
+      JOIN repositories r ON r.id=a.repository_id
+      WHERE a.repository_id=$1 AND a.request_id=$2 AND r.commander_id=$3
+      AND a.module='documentation' AND a.format='Nota de conversación' AND a.input_context=$4`,[row.repository_id,messageId,this.owner,input.context]);
+    if(saved.rows[0])return library.read(saved.rows[0].id);
+    const existing=await library.prepare(input);if(existing)return existing;
     const answer=row.content.replace(/^\s*\[[^\r\n]*?\bPOSE\s+(?:[1-9]|1[0-6]):[^\r\n]*\]\s*(?:\r?\n|$)/u,'');
     const content=this.files.redact(`# Nota de conversación\n\nBorrador copiado del turno confirmado para revisión. Las propuestas del texto no son acciones ejecutadas.\n\n## Solicitud\n\n${row.question}\n\n## Respuesta\n\n${answer}`);
     if(content.length>1000000)throw new HttpError(413,'NOTES_TOO_LARGE','El turno es demasiado largo para guardarlo como un único borrador.');

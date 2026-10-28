@@ -36,6 +36,12 @@ import type { AccessControl } from './modules/access/access.js';
 import { accessRouter } from './modules/access/router.js';
 import { usageRouter,type UsageMeter } from './modules/access/usage.js';
 import type {ConversationNotes} from './modules/library/application/conversation-notes.js';
+import type { GitHubService } from './modules/github/github-service.js';
+import { createGitHubRouter } from './modules/github/github-router.js';
+import type {PrototypeService} from './modules/prototypes/prototype-service.js';
+import {createPrototypeRouter} from './modules/prototypes/prototype-router.js';
+import{previewPolicy}from'./modules/prototypes/manifest.js';
+import{appVersion}from'../../packages/contracts/index.js';
 
 export function createApp(dependencies: {
   sendMessage: SendMessage;
@@ -50,6 +56,8 @@ export function createApp(dependencies: {
   beforeHistory?: () => Promise<void>;
   library?: LibraryService;
   conversationNotes?:ConversationNotes;
+  github?: GitHubService;
+  prototypes?:PrototypeService;
   memory?: MemoryService;
   workspace?: WorkspaceService;
   changes?: ProposalService;
@@ -74,6 +82,7 @@ export function createApp(dependencies: {
     else callback(new HttpError(403, 'ORIGIN_DENIED', 'Origen no permitido.'));
   } }));
   if(dependencies.access){app.use('/api',dependencies.access.middleware(dependencies.allowedOrigins,dependencies.isolatedRunner===true));app.use('/api',accessRouter(dependencies.access));}
+  if(dependencies.prototypes)app.get('/prototype-view/:token',rateLimit({windowMs:60000,limit:60}),async(req,res)=>{const artifact=dependencies.prototypes!.view(typeof req.params.token==='string'?req.params.token:'');res.removeHeader('X-Frame-Options');res.set({'Content-Type':'text/html; charset=utf-8','Content-Security-Policy':`${previewPolicy}; sandbox allow-scripts; frame-ancestors 'self'`,'Cache-Control':'no-store','Referrer-Policy':'no-referrer','Permissions-Policy':'camera=(), microphone=(), geolocation=(), clipboard-read=(), clipboard-write=()','Cross-Origin-Resource-Policy':'same-origin'}).send(artifact.runtime.content);});
   if(dependencies.usage)app.use('/api',usageRouter(dependencies.usage));
   if(dependencies.getSpec)app.get('/api/spec',async(_req,res)=>res.set('Cache-Control','no-store').json(await dependencies.getSpec!()));
   if(dependencies.conversationNotes)app.post('/api/conversations/:id/notes',express.json({limit:'2kb'}),async(req,res)=>{
@@ -83,7 +92,7 @@ export function createApp(dependencies: {
     res.set('Cache-Control','no-store').json({artifact:await dependencies.conversationNotes!.save(id.data,body.data.messageId)});
   });
   app.get('/health', (_req, res) => {
-    res.set('Cache-Control', 'no-store').json({ status: 'ok', service: 'ares-backend', chat: dependencies.getChatStatus?.() ?? { configured: true, model: '' }, providers: dependencies.getProviderStatus?.() });
+    res.set('Cache-Control', 'no-store').json({ status: 'ok', service: 'ares-backend',version:appVersion, chat: dependencies.getChatStatus?.() ?? { configured: true, model: '' }, providers: dependencies.getProviderStatus?.() });
   });
   if (dependencies.listOpenRouterModels) app.get('/api/models/openrouter', async (_req, res) => {
     res.json({ models: await dependencies.listOpenRouterModels!() });
@@ -137,6 +146,8 @@ export function createApp(dependencies: {
   }), express.json({ limit: '300kb' }), createChatRouter(dependencies.sendMessage));
   if (dependencies.backups) app.use('/api', createMaintenanceRouter(dependencies.backups, dependencies.allowedOrigins));
   if (dependencies.research) app.use('/api',createResearchRouter(dependencies.research,dependencies.allowedOrigins));
+  if (dependencies.github) app.use('/api',createGitHubRouter(dependencies.github, dependencies.allowedOrigins));
+  if (dependencies.prototypes) app.use('/api',createPrototypeRouter(dependencies.prototypes, dependencies.allowedOrigins));
   if (dependencies.bio) app.use('/api',createBioRouter(dependencies.bio,dependencies.allowedOrigins));
   if (dependencies.conversations) app.use('/api/conversations', async (_req, _res, next) => {
     try { await dependencies.beforeHistory?.(); next(); }

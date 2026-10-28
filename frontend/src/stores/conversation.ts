@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed,ref,watch } from 'vue';
-import { completeVoiceTurn,recognitionConstructor,voiceCommand,type Recognition } from '../domain/conversation';
+import { completeVoiceTurn,recognitionConstructor,recognitionFrame,voiceCommand,type Recognition } from '../domain/conversation';
 import { useConsoleStore } from './console';
 import { useVoiceStore } from './voice';
 import { useAccessStore } from './access';
@@ -15,10 +15,10 @@ export const useConversationStore=defineStore('conversation-mode',()=>{
   const labels={off:'Conversación desactivada',standby:'Esperando «ARES»',listening:'Te escucho · termina con «okey»',review:'Revisa tu mensaje',thinking:'Preparando respuesta',speaking:'A.R.E.S. está hablando'};
   const label=computed(()=>labels[phase.value]);
   let recognition:Recognition|undefined,epoch=0,restart:ReturnType<typeof setTimeout>|undefined,turnDeadline:ReturnType<typeof setTimeout>|undefined;
-  let quickEnds=0,returnTo:'standby'|'listening'='listening',utteranceStarted=false,turnStarted=0;
+  let quickEnds=0,returnTo:'standby'|'listening'='listening',utteranceStarted=false,turnStarted=0,turnVersion=0;
   function clearTimers(){clearTimeout(restart);clearTimeout(turnDeadline);}
   function halt(){epoch++;clearTimeout(restart);if(recognition){recognition.onstart=null;recognition.onresult=null;recognition.onerror=null;recognition.onend=null;try{recognition.abort();}catch{}}recognition=undefined;microphone.value=false;interim.value='';}
-  function stop(message=''){enabled.value=false;phase.value='off';clearTimers();halt();voice.stop();notice.value=message;heard.value='';}
+  function stop(message=''){turnVersion++;enabled.value=false;phase.value='off';clearTimers();halt();voice.stop();notice.value=message;heard.value='';}
   function pause(){halt();clearTimers();phase.value='review';notice.value='No se envió nada. Revisa la transcripción y pulsa Enviar turno o continúa dictando.';}
   function listen(next:'standby'|'listening',continuing=false){
     if(!enabled.value||document.hidden||!access.canWrite)return;
@@ -31,17 +31,22 @@ export const useConversationStore=defineStore('conversation-mode',()=>{
     current.onstart=()=>{if(version===epoch){microphone.value=true;started=Date.now();}};
     current.onresult=event=>{
       if(version!==epoch||!enabled.value||voice.speaking||voice.preparing||consoleStore.pending)return;
-      recognized=true;quickEnds=0;let partial='';
-      for(let i=event.resultIndex;i<event.results.length;i++){
-        const result=event.results[i];if(!result)continue;const text=result[0]?.transcript.trim()??'';
-        if(!result.isFinal){partial+=' '+text;continue;}
-        if(finalIndices.has(i))continue;finalIndices.add(i);
+      recognized=true;quickEnds=0;
+      const frame=recognitionFrame(event.results,finalIndices),partial=frame.interim;
+      for(let i=0;i<frame.finals.length;i++){
+        const text=frame.finals[i]!;
         if(phase.value==='standby')heard.value=text.slice(0,140);
         const command=voiceCommand(text);
         if(phase.value!=='standby'&&command.kind==='sleep'){transcript.value='';say('De acuerdo. Aquí estaré cuando digas ARES.','standby');return;}
         if(phase.value!=='standby'&&command.kind==='cancel'){transcript.value='';say('He descartado el mensaje. ¿Qué necesitas?','listening');return;}
         if(phase.value==='standby'){
-          if(command.kind==='wake'){transcript.value=command.remainder;const turn=completeVoiceTurn(command.remainder);if(turn.complete&&turn.text){transcript.value=turn.text;void send();}else if(command.remainder){halt();listen('listening');}else say('Aquí estoy. ¿En qué te ayudo?','listening');return;}
+          if(command.kind==='wake'){
+            const turn=completeVoiceTurn([command.remainder,...frame.finals.slice(i+1)].filter(Boolean).join(' '));transcript.value=turn.text;
+            if(turn.text.length>16000){pause();error.value='El mensaje supera 16 000 caracteres. Recórtalo antes de enviarlo.';return;}
+            if(turn.complete&&turn.text)void send();
+            else if(turn.text||partial){phase.value='listening';turnStarted=Date.now();clearTimeout(turnDeadline);turnDeadline=setTimeout(pause,90000);interim.value=partial;}
+            else say('Aquí estoy. ¿En qué te ayudo?','listening');return;
+          }
           continue;
         }
         if(phase.value!=='listening')continue;
@@ -71,11 +76,11 @@ export const useConversationStore=defineStore('conversation-mode',()=>{
     halt();clearTimers();returnTo=next;phase.value='speaking';utteranceStarted=false;
     if(!voice.speak(text,'conversation-mode',true)){notice.value=voice.error||'La respuesta queda en pantalla.';resumeAfterSpeech();}
   }
-  watch(()=>voice.speaking||voice.preparing,active=>{if(!enabled.value||phase.value!=='speaking')return;if(active)utteranceStarted=true;else if(utteranceStarted)resumeAfterSpeech();});
-  function start(){if(!supported||!access.canWrite||consoleStore.pending)return;error.value='';notice.value='El navegador puede procesar el audio en línea. Solo se envía a A.R.E.S. el turno que cierres con okey.';enabled.value=true;quickEnds=0;voice.stop();if(transcript.value.trim()){phase.value='review';notice.value='Conservaste un borrador. Revísalo, envíalo o pulsa Continuar dictando.';}else listen('standby');}
+  watch(()=>voice.speaking||voice.preparing,active=>{if(!enabled.value||phase.value!=='speaking')return;if(active)utteranceStarted=true;else if(utteranceStarted){if(voice.error){pause();notice.value=voice.error;}else resumeAfterSpeech();}});
+  function start(){if(enabled.value||!supported||!access.canWrite||consoleStore.pending)return;error.value='';notice.value='El navegador puede procesar el audio en línea. Solo se envía a A.R.E.S. el turno que cierres con okey.';enabled.value=true;quickEnds=0;voice.stop();if(transcript.value.trim()){phase.value='review';notice.value='Conservaste un borrador. Revísalo, envíalo o pulsa Continuar dictando.';}else listen('standby');}
   function continueTurn(){if(enabled.value&&!consoleStore.pending){error.value='';voice.stop();listen('listening');}}
-  function interrupt(){voice.stop();if(consoleStore.pending)consoleStore.cancel();pause();notice.value='Respuesta detenida. Revisa el historial si el servidor ya había confirmado el turno.';}
-  function discard(){transcript.value='';interim.value='';error.value='';if(enabled.value){voice.stop();listen('standby');}}
+  function interrupt(){if(!enabled.value)return;turnVersion++;voice.stop();if(consoleStore.pending)consoleStore.cancel();pause();notice.value='Respuesta detenida. Revisa el historial si el servidor ya había confirmado el turno.';}
+  function discard(){turnVersion++;transcript.value='';interim.value='';error.value='';if(enabled.value){voice.stop();listen('standby');}}
   async function saveNote(conversationId:string,messageId:string){savingNote.value=true;noteStatus.value='Guardando borrador en Biblioteca…';try{const response=await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/notes`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messageId})});const data=await response.json();if(!response.ok)throw new Error(data.error?.message??'No se pudo guardar el borrador.');noteStatus.value=`Borrador guardado en Biblioteca: ${data.artifact.title}. No se modificaron archivos.`;}catch(cause){noteStatus.value='No se guardó el borrador: '+(cause as Error).message;}finally{savingNote.value=false;}}
   async function send(){
     if(!enabled.value||consoleStore.pending||consoleStore.historyBusy||!access.canWrite)return;
@@ -83,9 +88,10 @@ export const useConversationStore=defineStore('conversation-mode',()=>{
     const text=transcript.value.trim();if(!text||text.length>16000)return;
     halt();clearTimers();
     if(consoleStore.draft.trim()&&consoleStore.draft.trim()!==text){phase.value='review';error.value='Hay un mensaje escrito en el chat. Envíalo o vacíalo antes de enviar este turno de voz.';return;}
-    phase.value='thinking';error.value='';notice.value='';const before=consoleStore.completedReply?.id,shouldDocument=documentReplies.value;
+    phase.value='thinking';error.value='';notice.value='';const before=consoleStore.completedReply?.id,shouldDocument=documentReplies.value,version=++turnVersion;
     consoleStore.draft=text;await consoleStore.runChat();
     const reply=consoleStore.completedReply;
+    if(version!==turnVersion)return;
     if(reply&&reply.id!==before){
       transcript.value='';
       if(shouldDocument){if(reply.conversationId&&reply.messageId)void saveNote(reply.conversationId,reply.messageId);else noteStatus.value='No se guardó un borrador: hace falta una conversación persistente vinculada a un proyecto.';}

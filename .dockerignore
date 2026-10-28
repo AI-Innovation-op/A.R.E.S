@@ -7,4 +7,5 @@
 .git
 .local-setup
 .release-check
+.delivery-check-*
 *.png

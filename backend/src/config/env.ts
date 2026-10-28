@@ -1,10 +1,16 @@
 import { config } from 'dotenv';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath,pathToFileURL } from 'node:url';
+import path from 'node:path';
 import { z } from 'zod';
 
 // Resolver desde el proyecto, incluso al arrancar desde otro directorio.
-export const envFile = new URL('../../.env', import.meta.url);
-config({ path: fileURLToPath(envFile), quiet: true });
+const settingsFile=process.env.ARES_SETTINGS_FILE;
+if(settingsFile&&!path.isAbsolute(settingsFile))throw new Error('ARES_SETTINGS_FILE debe ser una ruta absoluta.');
+export const envFile = settingsFile?pathToFileURL(settingsFile):new URL('../../.env', import.meta.url);
+const configured=config({ path: fileURLToPath(envFile), quiet: true });
+// En contenedor, la configuración editada por el administrador prevalece sobre
+// los valores iniciales del proveedor; no sustituye DB, orígenes ni otros ajustes.
+if(settingsFile&&configured.parsed)for(const name of ['GEMINI_API_KEY','GEMINI_MODEL','OPENROUTER_API_KEY','OPENROUTER_MODEL','ARES_ACCESS_MODE'])if(configured.parsed[name]!==undefined)process.env[name]=configured.parsed[name];
 const optionalText = z.preprocess(value => typeof value === 'string' && !value.trim() ? undefined : value, z.string().trim().min(1).optional());
 
 const schema = z.object({

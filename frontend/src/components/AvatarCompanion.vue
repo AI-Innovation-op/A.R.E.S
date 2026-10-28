@@ -5,7 +5,7 @@ import type { Pose } from '../domain/poses';
 import type { AvatarScene } from '../avatar/scene';
 import AvatarFallback from './AvatarCanvas.vue';
 
-const props = defineProps<{ pose: Pose; refactorPulse?: number }>();
+const props = defineProps<{ pose: Pose; refactorPulse?: number; activity?:'idle'|'listening'|'thinking'|'speaking' }>();
 const host = ref<HTMLElement>(), wrapper = ref<HTMLElement>();
 const mode = ref<'loading' | '3d' | '2d'>('loading'), fallbackReason = ref('');
 const animation = ref(true), patrol = ref(false), floating = ref(false), reducedMotion = ref(false);
@@ -22,7 +22,7 @@ async function start3d() {
     const { mountAvatarScene } = await import('../avatar/scene');
     if (disposed || version !== generation || !host.value) return;
     scene = mountAvatarScene(host.value, props.pose, () => fallback('Se perdió la conexión gráfica. El avatar continúa en 2D.'));
-    scene.setPatrol(patrol.value); updateMotion(); mode.value = '3d';
+    scene.setPatrol(patrol.value); scene.setActivity(props.activity??'idle'); updateMotion(); mode.value = '3d';
   } catch { if (!disposed && version === generation) fallback('WebGL no está disponible. El avatar continúa en 2D.'); }
 }
 function toggleMode() { if (mode.value === '2d') void start3d(); else { ++generation; fallback('Modo 2D seleccionado.'); } }
@@ -50,6 +50,7 @@ function keyMove(event: KeyboardEvent) {
 }
 watch(() => props.pose, pose => { scene?.setPose(pose); }); watch(animation, updateMotion); watch(patrol, enabled => { scene?.setPatrol(enabled); });
 watch(()=>props.refactorPulse,()=>{scene?.triggerRefactor();});
+watch(()=>props.activity,value=>scene?.setActivity(value??'idle'));
 onMounted(() => {
   motionQuery = window.matchMedia('(prefers-reduced-motion: reduce)'); onMotionChange();
   motionQuery.addEventListener('change', onMotionChange); window.addEventListener('resize', clampPosition); void start3d();
